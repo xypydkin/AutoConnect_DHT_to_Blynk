@@ -1,0 +1,118 @@
+// LED will blink when in config mode
+#define BLYNK_PRINT Serial
+ 
+ 
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+#include <DHT.h>
+#include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
+
+//for LED status
+#include <Ticker.h>
+Ticker ticker;
+
+#ifndef LED_BUILTIN
+#define LED_BUILTIN 13 // ESP32 DOES NOT DEFINE LED_BUILTIN
+#endif
+
+
+char auth[] = "SPvTPqu9eMxs2j77gLQ4SHYKnuIKHhHm";
+int LED = LED_BUILTIN;
+
+void tick()
+{
+  //toggle state
+  digitalWrite(LED, !digitalRead(LED));     // set pin to the opposite state
+}
+
+//gets called when WiFiManager enters configuration mode
+void configModeCallback (WiFiManager *myWiFiManager) {
+  Serial.println("Entered config mode");
+  Serial.println(WiFi.softAPIP());
+  //if you used auto generated SSID, print it
+  Serial.println(myWiFiManager->getConfigPortalSSID());
+  //entered config mode, make led toggle faster
+  ticker.attach(0.2, tick);
+}
+
+#define DHTPIN 0          // D3
+ 
+// Uncomment whatever type you're using!
+#define DHTTYPE DHT11     // DHT 11
+//#define DHTTYPE DHT22   // DHT 22, AM2302, AM2321
+//#define DHTTYPE DHT21   // DHT 21, AM2301
+ 
+DHT dht(DHTPIN, DHTTYPE);
+BlynkTimer timer;
+ 
+// This function sends Arduino's up time every second to Virtual Pin (5).
+// In the app, Widget's reading frequency should be set to PUSH. This means
+// that you define how often to send data to Blynk App.
+void sendSensor()
+{
+  float h = dht.readHumidity();
+  float t = dht.readTemperature(); // or dht.readTemperature(true) for Fahrenheit
+ 
+  if (isnan(h) || isnan(t)) {
+    Serial.println("Failed to read from DHT sensor!");
+    return;
+  }
+  // You can send any value at any time.
+  // Please don't send more that 10 values per second.
+  Blynk.virtualWrite(V0, t);
+  Blynk.virtualWrite(V1, h);
+}
+
+void setup() {
+  WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP
+  // put your setup code here, to run once:
+  Serial.begin(115200);
+  Blynk.config(auth);
+  // You can also specify server:
+  //Blynk.begin(auth, ssid, pass, "blynk-cloud.com", 8442);
+  //Blynk.begin(auth, ssid, pass, IPAddress(192,168,1,100), 8442);
+ 
+  dht.begin();
+ 
+  // Setup a function to be called every second
+  timer.setInterval(1000L, sendSensor);
+  //set led pin as output
+  pinMode(LED, OUTPUT);
+  // start ticker with 0.5 because we start in AP mode and try to connect
+  ticker.attach(0.6, tick);
+
+  //WiFiManager
+  //Local intialization. Once its business is done, there is no need to keep it around
+  WiFiManager wm;
+  //reset settings - for testing
+  wm.resetSettings();
+  
+  //change starting SSID here
+  wm.autoConnect("PanAutoConnect");
+  
+  //set callback that gets called when connecting to previous WiFi fails, and enters Access Point mode
+  wm.setAPCallback(configModeCallback);
+
+  //fetches ssid and pass and tries to connect
+  //if it does not connect it starts an access point with the specified name
+  //here  "AutoConnectAP"
+  //and goes into a blocking loop awaiting configuration
+  if (!wm.autoConnect()) {
+    Serial.println("failed to connect and hit timeout");
+    //reset and try again, or maybe put it to deep sleep
+    ESP.restart();
+    delay(1000);
+  }
+
+  //if you get here you have connected to the WiFi
+  Serial.println("connected...yeey :)");
+  ticker.detach();
+  //keep LED on
+  digitalWrite(LED, LOW);
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+ Blynk.run();
+  timer.run();
+}
